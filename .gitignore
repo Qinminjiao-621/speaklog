@@ -1,0 +1,44 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.DS_Store
+.env*
+backups/
+private-data/
+speaklog-backup-*.json
+*.local.json
+
+# Personal JSON is private by default; allow only project configuration.
+*.json
+*.jsonl
+*.ndjson
+!/package.json
+!/package-lock.json
+!/tsconfig.json
+
+# Credentials and local tooling state
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+*.mobileprovision
+.npmrc
+.netrc
+.git-credentials
+.ssh/
+.aws/
+.codex/
+.agents/
+credentials*
+secrets*
+
+# Local caches, logs, database files and archives
+coverage/
+.vite/
+*.log
+*.sqlite*
+*.db
+*.zip
+*.tar
+*.gz
