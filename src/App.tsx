@@ -1,108 +1,171 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, ChevronRight, Download, FileUp, Plus, Search, X } from 'lucide-react';
-import { createBackup, loadState, mergeNotes, parseNotes, saveState, searchNotes, validateBackup, validateNotes } from './data';
-import type { Note, State } from './data';
+import type { ReactNode } from 'react';
+import { ArrowLeft, BookOpen, ChevronRight, Download, FileUp, MoreHorizontal, Plus, Search, Settings, X } from 'lucide-react';
+import { parseNotes } from './data';
+import type { Note } from './data';
+import { addBook, applyPlan, deleteBook, deletionPrompts, exportLibrary, getBook, moveNote, newId, nextDay, planImport, planRestore, renameBook, saveNote, searchLibrary, sortedNotes } from './model';
+import type { Library, Plan, StoredNote } from './model';
+import { repository } from './storage';
+import { useNavigation } from './useNavigation';
+import Editor from './components/Editor';
 
-const uniqueId = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 const dayLabel = (day: number) => `Day ${String(day).padStart(2, '0')}`;
 const localDate = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
-const template = JSON.stringify({ schemaVersion: 1, id: 'day-04', day: 4, date: '2026-11-10', title: 'Day 04｜采购报价谈判', topic: '采购报价谈判', sentences: [{ id: 'day-04-s01', en: 'I would ask the supplier to break down the price into materials, labor, and overhead.', zh: '我会要求供应商将报价拆分为材料、人工和间接费用。' }], mistakes: [{ id: 'day-04-m01', original: 'Your price is too high than the market price.', corrected: 'Your price is higher than the market price.' }] }, null, 2);
-
-function Editor({ initial, busy, onSave, onCancel }: { initial: Note; busy: boolean; onSave: (n: Note) => Promise<void>; onCancel: () => void }) {
-  const [note, setNote] = useState(initial);
-  const [error, setError] = useState('');
-  const patch = (v: Partial<Note>) => setNote(n => ({ ...n, ...v }));
-  return <form onSubmit={e => { e.preventDefault(); try { const n = validateNotes(note)[0]; setError(''); void onSave(n); } catch (err) { setError((err as Error).message); } }}>
-    <h1>{initial.title ? '编辑笔记' : '新增笔记'}</h1>
-    {error && <p role="alert" className="notice">{error}</p>}
-    <fieldset disabled={busy}>
-      <div className="card fields"><div className="columns"><label>Day 编号<input required type="number" min="1" max="10000" value={note.day || ''} onChange={e => patch({ day: Number(e.target.value) })}/></label><label>日期<input required type="date" value={note.date} onChange={e => patch({ date: e.target.value })}/></label></div>
-        <label>标题<input required value={note.title} placeholder={`${dayLabel(note.day)}｜练习主题`} onChange={e => patch({ title: e.target.value })}/></label>
-        <label>练习主题<input required value={note.topic} onChange={e => patch({ topic: e.target.value })}/></label></div>
-      <h2>今日句子</h2>
-      {note.sentences.map((s, i) => <div className="card fields" key={s.id}><div className="row"><strong>句子 {i + 1}</strong><button type="button" className="danger" disabled={note.sentences.length === 1} onClick={() => patch({ sentences: note.sentences.filter((_, j) => i !== j) })}>删除句子</button></div>
-        <label>英文<textarea required value={s.en} onChange={e => patch({ sentences: note.sentences.map((v, j) => j === i ? { ...v, en: e.target.value } : v) })}/></label>
-        <label>中文翻译<textarea required value={s.zh} onChange={e => patch({ sentences: note.sentences.map((v, j) => j === i ? { ...v, zh: e.target.value } : v) })}/></label></div>)}
-      <button type="button" onClick={() => patch({ sentences: [...note.sentences, { id: `${note.id}-s-${uniqueId()}`, en: '', zh: '' }] })}><Plus size={18}/>添加句子</button>
-      <h2>今日纠错</h2>
-      {note.mistakes.map((m, i) => <div className="card fields" key={m.id}><div className="row"><strong>纠错 {i + 1}</strong><button type="button" className="danger" onClick={() => patch({ mistakes: note.mistakes.filter((_, j) => i !== j) })}>删除纠错</button></div>
-        <label>原始错误表达<textarea required value={m.original} onChange={e => patch({ mistakes: note.mistakes.map((v, j) => j === i ? { ...v, original: e.target.value } : v) })}/></label>
-        <label>正确表达<textarea required value={m.corrected} onChange={e => patch({ mistakes: note.mistakes.map((v, j) => j === i ? { ...v, corrected: e.target.value } : v) })}/></label></div>)}
-      <button type="button" onClick={() => patch({ mistakes: [...note.mistakes, { id: `${note.id}-m-${uniqueId()}`, original: '', corrected: '' }] })}><Plus size={18}/>添加纠错</button>
-      {!!note.legacyMistakes?.length && <><h2>旧版纠错原文</h2><p className="muted">原文没有明确的前后对应关系，保留原文供核对。</p>{note.legacyMistakes.map((m, i) => <label key={i}>记录 {i + 1}<textarea value={m} onChange={e => patch({ legacyMistakes: note.legacyMistakes!.map((v, j) => j === i ? e.target.value : v) })}/></label>)}</>}
-      <div className="actions"><button className="primary" type="submit">{busy ? '保存中…' : '保存笔记'}</button><button type="button" onClick={onCancel}>取消</button></div>
-    </fieldset>
-  </form>;
+function download(value: unknown, name: string) {
+  const url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' }));
+  const a = document.createElement('a'); a.href = url; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 30000);
 }
+function Modal({ title, children, onClose, busy }: { title: string; children: ReactNode; onClose: () => void; busy: boolean }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => { ref.current?.showModal(); return () => ref.current?.close(); }, []);
+  return <dialog ref={ref} aria-labelledby="dialog-title" onCancel={e => { e.preventDefault(); if (!busy) onClose(); }}>
+    <div className="row"><h2 id="dialog-title">{title}</h2><button disabled={busy} aria-label="关闭对话框" onClick={onClose}><X size={20}/></button></div>{children}
+  </dialog>;
+}
+function SearchBox({ value, onChange, global = false }: { value: string; onChange: (s: string) => void; global?: boolean }) {
+  return <label className="search"><Search size={19}/><input type="search" aria-label={global ? '搜索全部笔记本' : '搜索当前笔记本'} placeholder={global ? '搜索全部笔记本' : '搜索 Day、中英文关键词'} value={value} onChange={e => onChange(e.target.value)}/></label>;
+}
+function MoveDialog({ state, note, busy, error, onClose, onMove }: { state: Library; note: StoredNote; busy: boolean; error: string; onClose: () => void; onMove: (book: string, day: number) => Promise<void> }) {
+  const books = state.notebooks.filter(b => b.id !== note.notebookId);
+  const [target, setTarget] = useState(books[0]?.id ?? ''); const [day, setDay] = useState(note.day);
+  const conflict = state.notes.some(n => n.notebookId === target && n.day === day);
+  let suggestion: number | undefined;
+  try { suggestion = target ? nextDay(state, target) : undefined; } catch { /* Full notebook: keep conflict visible; never crash the reader. */ }
+  return <Modal title="移动笔记" busy={busy} onClose={onClose}>
+    {error && <p role="alert" className="notice">{error}</p>}
+    {!books.length ? <p>请先在首页新建另一个笔记本。</p> : <form onSubmit={e => { e.preventDefault(); void onMove(target, day); }}><fieldset disabled={busy}>
+      <label>目标笔记本<select value={target} onChange={e => { setTarget(e.target.value); setDay(note.day); }}>{books.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label>
+      <label>目标 Day 编号<input required type="number" min="1" max="10000" value={day || ''} onChange={e => setDay(Number(e.target.value))}/></label>
+      {conflict && <div role="alert" className="notice">目标笔记本已有 {dayLabel(day)}，不会覆盖。{suggestion !== undefined ? <button type="button" onClick={() => setDay(suggestion!)}>改用 {dayLabel(suggestion)}</button> : <p>目标笔记本编号已满，请选择其他笔记本。</p>}</div>}
+      <p className="muted">移动保留内容和日期，源笔记本不再保留副本。标题中的原 Day 文字保持不变，可在编辑中调整。</p>
+      <button className="primary wide" disabled={conflict || !day} type="submit">确认移动</button>
+    </fieldset></form>}
+  </Modal>;
+}
+const example = JSON.stringify({ schemaVersion: 1, id: 'day-01', day: 1, date: '2026-01-01', title: 'Day 01｜日常问候', topic: '日常问候', sentences: [{ id: 's01', en: 'Good morning.', zh: '早上好。' }], mistakes: [] }, null, 2);
 
 export default function App() {
-  const [data, setData] = useState<State>(); const current = useRef<State | undefined>(undefined);
-  const [fatal, setFatal] = useState(''); const [message, setMessage] = useState(''); const [busy, setBusy] = useState(false); const lock = useRef(false);
-  const [query, setQuery] = useState(''); const [selected, setSelected] = useState<string>();
-  const [importing, setImporting] = useState(false); const [input, setInput] = useState(''); const [editing, setEditing] = useState<Note>();
-  useEffect(() => { loadState().then(s => { current.current = s; setData(s); }).catch(e => setFatal(`无法读取本地笔记：${(e as Error).message}。原始数据未更改，请勿清除网站数据。`)); }, []);
-  async function commit(fn: (s: State) => State) {
+  const [data, setData] = useState<Library>(); const current = useRef<Library | undefined>(undefined);
+  const [fatal, setFatal] = useState(''); const [message, setMessage] = useState('');
+  const [busy, setBusy] = useState(false); const lock = useRef(false);
+  const [input, setInput] = useState('');
+  const [review, setReview] = useState<{ plan: Plan; restore: boolean }>(); const [moving, setMoving] = useState(false);
+  const { entry, nav } = useNavigation(!!data, !review && !moving && !busy);
+  const view = entry.view;
+  useEffect(() => {
+    let active = true;
+    repository.load().then(s => { if (active) { current.current = s; setData(s); } }).catch(e => { if (active) setFatal(e.message); });
+    return () => { active = false; };
+  }, []);
+  useEffect(() => { setInput(''); setMoving(false); setReview(undefined); }, [entry.index, view.page]);
+  useEffect(() => {
+    if (view.page !== 'edit' && !(view.page === 'add' && input)) return;
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn);
+  }, [view.page, input]);
+  async function commit(fn: (s: Library) => Library, reason = 'edit') {
     if (lock.current || !current.current) return false;
     lock.current = true; setBusy(true);
-    try { const next = fn(current.current); await saveState(next); current.current = next; setData(next); return true; }
-    catch { setMessage('保存失败，数据未更改。请检查存储权限或空间后重试。'); return false; }
+    try {
+      const next = await repository.save(fn(current.current), reason); current.current = next; setData(next); return true;
+    } catch (e) { setMessage((e as Error).message || '保存失败，原数据未更改，请检查存储空间。'); return false; }
     finally { lock.current = false; setBusy(false); }
   }
-  function home() { setSelected(undefined); setEditing(undefined); setImporting(false); window.scrollTo(0, 0); }
-  async function importNotes() {
-    try { const notes = parseNotes(input); let result = { added: 0, updated: 0 };
-      if (await commit(s => { const r = mergeNotes(s, notes); result = r; return r.state; })) { setMessage(`导入成功：新增 ${result.added} 篇，更新 ${result.updated} 篇。`); setInput(''); home(); }
-    } catch (e) { setMessage((e as Error).message); }
+  const attempt = (fn: () => void) => { try { fn(); } catch (e) { setMessage((e as Error).message); } };
+  const back = () => { if (busy) return; if ((view.page === 'edit' || (view.page === 'add' && input)) && !window.confirm('离开将放弃尚未保存的输入，确定返回？')) return; nav.current?.back(); };
+  async function recovery() {
+    try { download(await repository.recoveryCopy(), `speaklog-recovery-${localDate()}.json`); setMessage('已请求导出安全副本，请确认文件已保存。此文件用于人工恢复，不要直接作为普通笔记导入。'); }
+    catch { setMessage('安全副本导出失败，请保持当前页面并寻求协助，不要清除数据。'); }
   }
-  async function readFile(file: File | undefined, restore = false) {
-    if (!file) return;
-    try { const text = await file.text(); if (!restore) { setInput(text); setMessage('文件已读取，请点击“验证并导入”。'); return; }
-      const restored = validateBackup(JSON.parse(text));
-      if (window.confirm(`将合并恢复 ${restored.notes.length} 篇笔记，相同 ID 的笔记会被备份内容更新，其余笔记保留。是否继续？`)) {
-        if (await commit(s => mergeNotes(s, restored.notes).state)) { setMessage('备份恢复成功。'); home(); }
-      }
-    } catch (e) { setMessage(e instanceof SyntaxError ? 'JSON 格式错误，未修改笔记。' : (e as Error).message); }
+  async function readFile(file?: File, restore = false) {
+    if (!file || lock.current) return;
+    lock.current = true; setBusy(true);
+    try {
+      const text = (await file.text()).replace(/^\uFEFF/, '');
+      if (restore) { setReview({ plan: planRestore(current.current!, JSON.parse(text)), restore: true }); setMessage(''); }
+      else { setInput(text); setMessage('文件已读取，请点击“预览导入”。'); }
+    } catch (e) { setMessage(e instanceof SyntaxError ? 'JSON 格式不正确，原数据未更改。' : (e as Error).message); }
+    finally { lock.current = false; setBusy(false); }
   }
-  function exportBackup() {
-    if (!data) return;
-    const url = URL.createObjectURL(new Blob([JSON.stringify(createBackup(data), null, 2)], { type: 'application/json' }));
-    const a = document.createElement('a'); a.href = url; a.download = `speaklog-backup-${localDate()}.json`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 10000);
-    setMessage('已请求导出全部笔记，请确认备份已保存到“文件”App。');
+  if (!data) return <main><h1>SpeakLog <small>V2.0</small></h1><p role={fatal ? 'alert' : 'status'}>{fatal || '正在安全加载笔记…'}</p>{fatal && <><p>原始数据未删除。请勿卸载 APP 或清除网站数据。</p><button onClick={() => void recovery()}>导出安全副本</button><button onClick={() => location.reload()}>重新加载</button></>}{message && <p role="status">{message}</p>}</main>;
+  const book = data.notebooks.find(b => b.id === view.bookId);
+  const note = data.notes.find(n => n.uid === view.uid);
+  const noteBook = note && data.notebooks.find(b => b.id === note.notebookId);
+  const openNote = (n: StoredNote) => nav.current?.go({ page: 'detail', uid: n.uid, bookId: n.notebookId, query: '' });
+  const results = (global: boolean) => {
+    const hits = searchLibrary(data, view.query, global ? undefined : book?.id);
+    return <><p className="muted" role="status">{hits.length} 篇结果</p><div className="results">{hits.map(({ note: n, snippet }) => <button className="result" key={n.uid} onClick={() => openNote(n)}>
+      <div className="row"><strong>{dayLabel(n.day)} · {n.topic}</strong><ChevronRight size={18}/></div>
+      {global && <small>{getBook(data, n.notebookId).name}</small>}<p>{snippet}</p>
+    </button>)}</div>{!hits.length && <p className="empty">没有匹配的笔记，试试其他关键词。</p>}</>;
+  };
+  function createNotebook() { const name = window.prompt('新建笔记本名称'); if (name !== null) void commit(s => addBook(s, name)); }
+  function renameNotebook(id: string) { const name = window.prompt('笔记本新名称', getBook(data!, id).name); if (name !== null) void commit(s => renameBook(s, id, name)); }
+  async function removeNotebook(id: string) {
+    const prompts = deletionPrompts(current.current!, id);
+    for (const prompt of prompts) if (!window.confirm(prompt)) return;
+    if (await commit(s => deleteBook(s, id, prompts.length))) setMessage('笔记本已删除。');
   }
-  function addNote() {
-    const day = Math.max(0, ...data!.notes.map(n => n.day)) + 1;
-    let id = `day-${String(day).padStart(2, '0')}`;
-    if (data!.notes.some(n => n.id === id)) id += `-${uniqueId()}`;
-    setEditing({ schemaVersion: 1, id, day, date: localDate(), title: '', topic: '', sentences: [{ id: `${id}-s01`, en: '', zh: '' }], mistakes: [] });
+  function blankNote(id: string): Note {
+    let day = 1;
+    try { day = nextDay(data!, id); } catch { /* Existing values remain protected by saveNote uniqueness checks. */ }
+    return { schemaVersion: 1, id: newId(), day, date: localDate(), title: '', topic: '', sentences: [{ id: newId(), en: '', zh: '' }], mistakes: [] };
   }
-  if (!data) return <main><h1>SpeakLog</h1><p role={fatal ? 'alert' : 'status'}>{fatal || '正在打开笔记…'}</p>{fatal && <button onClick={() => location.reload()}>重新加载</button>}</main>;
-  const note = data.notes.find(n => n.id === selected);
-  const notes = searchNotes(data.notes, query);
   return <main>
-    <header><span className="brand">SpeakLog</span><span className="muted">英语口语笔记本</span></header>
+    <header className="topbar">{view.page === 'home' ? <h1 className="brand">SpeakLog <small>V2.0</small></h1> : <button disabled={busy} className="back" aria-label="返回上一页" onClick={back}><ArrowLeft size={20}/><span>返回</span></button>}
+      {view.page === 'home' ? <button aria-label="设置与备份" onClick={() => nav.current?.go({ page: 'backup', query: '' })}><Settings size={21}/></button> : <span className="top-title">{view.page === 'detail' ? noteBook?.name : book?.name ?? 'SpeakLog'}</span>}
+      {view.page === 'book' && book && <button aria-label="新增或导入笔记" onClick={() => nav.current?.go({ page: 'add', bookId: book.id, query: '' })}><Plus size={24}/></button>}
+      {view.page === 'detail' && note && <details className="menu"><summary aria-label="笔记管理"><MoreHorizontal/></summary><div className="menu-items">
+        <button disabled={busy} onClick={() => nav.current?.go({ page: 'edit', bookId: note.notebookId, uid: note.uid, query: '' })}>编辑笔记</button>
+        <button disabled={busy} onClick={() => { setMessage(''); setMoving(true); }}>移动到其他笔记本</button>
+        <button className="danger" disabled={busy} onClick={async () => { if (window.confirm(`删除 ${dayLabel(note.day)}「${note.title}」？请确保已有备份。`) && await commit(s => ({ ...s, notes: s.notes.filter(n => n.uid !== note.uid) }))) { nav.current?.back(); setMessage('笔记已删除。'); } }}>删除笔记</button>
+      </div></details>}
+    </header>
     {message && <div className="notice" role="status"><span>{message}</span><button aria-label="关闭提示" onClick={() => setMessage('')}><X size={18}/></button></div>}
-    {(note || importing) && !editing && <button className="back" onClick={home}><ArrowLeft size={18}/>全部笔记</button>}
-    {editing ? <Editor initial={editing} busy={busy} onCancel={() => setEditing(undefined)} onSave={async n => { if (await commit(s => mergeNotes(s, [n]).state)) { setEditing(undefined); setSelected(n.id); setMessage('笔记已保存。'); window.scrollTo(0, 0); } }}/>
-      : note ? <>
-        <div className="row"><p className="muted">{dayLabel(note.day)} · {note.date}{note.example ? ' · 示例' : ''}</p><button disabled={busy} onClick={() => setEditing(note)}>编辑</button></div>
-        <h1>{note.title}</h1><p className="topic">{note.topic}</p>
-        <h2>今日句子</h2>{note.sentences.map((s, i) => <article className="card" key={s.id}><span className="muted">{String(i + 1).padStart(2, '0')}</span><p lang="en" className="english">{s.en}</p><p className="translation">{s.zh}</p></article>)}
-        <h2>今日纠错</h2>{note.mistakes.length || note.legacyMistakes?.length ? <>{note.mistakes.map(m => <article className="card" key={m.id}><span className="muted">原始表达</span><p lang="en" className="original">{m.original}</p><p className="arrow">↓</p><span className="muted">正确表达</span><p lang="en" className="english">{m.corrected}</p></article>)}
-          {!!note.legacyMistakes?.length && <article className="card"><h3>旧版纠错原文</h3><p className="muted">无法确认原始表达与正确表达的对应关系，保留原文。</p>{note.legacyMistakes.map((m, i) => <p className="preserve" key={i}>{m || '（空记录）'}</p>)}</article>}</> : <p className="muted">当天没有纠错记录。</p>}
-        <button disabled={busy} className="danger delete" onClick={async () => { if (window.confirm(`确定删除「${note.title}」？删除后可通过已有备份恢复。`) && await commit(s => ({ notes: s.notes.filter(n => n.id !== note.id) }))) { home(); setMessage('笔记已删除。'); } }}>删除笔记</button>
-      </> : importing ? <>
-        <h1>导入笔记</h1><p className="muted">粘贴 ChatGPT 生成的 JSON，或选择 JSON 文件。相同 ID 更新内容。</p>
-        <label className="file-button"><FileUp size={18}/>选择 JSON 文件<input disabled={busy} type="file" accept=".json,application/json" onChange={e => { void readFile(e.target.files?.[0]); e.target.value = ''; }}/></label>
-        <label>笔记 JSON<textarea className="json" spellCheck={false} value={input} placeholder="在此粘贴 JSON…" onChange={e => setInput(e.target.value)}/></label>
-        <button className="primary wide" disabled={busy || !input.trim()} onClick={() => void importNotes()}>验证并导入</button>
-        <details className="card"><summary>查看 JSON 格式示例</summary><pre>{template}</pre></details>
-      </> : <>
-        <label className="search"><Search size={20}/><input type="search" aria-label="搜索全部笔记" placeholder="搜索中文或英文关键词" value={query} onChange={e => setQuery(e.target.value)}/></label>
-        <div className="actions"><button className="primary" onClick={() => setImporting(true)}><FileUp size={18}/>导入笔记</button><button onClick={addNote}><Plus size={18}/>手动新增</button></div>
-        <h1 className="list-title">{query.trim() ? '搜索结果' : '每日笔记'}</h1>
-        <div className="note-list">{notes.map(n => <button className="note-row card" key={n.id} onClick={() => { setSelected(n.id); window.scrollTo(0, 0); }}><div className="day"><small>DAY</small><strong>{String(n.day).padStart(2, '0')}</strong></div><div className="note-copy"><h2>{n.title}</h2><p>{n.date}{n.example ? ' · 示例' : ''}</p><p>{n.topic}</p></div><ChevronRight size={18}/></button>)}</div>
-        {!notes.length && <div className="empty"><h2>{query.trim() ? '没有匹配的笔记' : '收录你的第一篇口语笔记'}</h2><p>{query.trim() ? '试试其他中文或英文关键词。' : '导入 ChatGPT 整理的每日笔记，也可以手动新增。'}</p></div>}
-        <footer><h2>数据备份</h2><button disabled={busy} onClick={exportBackup}><Download size={18}/>导出全部笔记</button><label className="file-button"><FileUp size={18}/>从 JSON 备份恢复<input disabled={busy} type="file" accept=".json,application/json" onChange={e => { void readFile(e.target.files?.[0], true); e.target.value = ''; }}/></label><p className="muted">笔记仅保存在当前设备，请定期导出备份。恢复时合并笔记，相同 ID 更新。</p></footer>
-      </>}
+    {view.page === 'home' && <>
+      <SearchBox global value={view.query} onChange={q => nav.current?.query(q)}/>
+      {view.query.trim() ? results(true) : <><div className="section-label"><h2>我的笔记本</h2><span>{data.notebooks.length} 本</span></div>
+        <div className="book-list">{data.notebooks.map(b => <div className="book-row" key={b.id}>
+          <button className="book-open" onClick={() => nav.current?.go({ page: 'book', bookId: b.id, query: '' })}><span className="book-icon"><BookOpen size={21}/></span><span className="book-name">{b.name}<small>{data.notes.filter(n => n.notebookId === b.id).length} 篇笔记</small></span><ChevronRight size={18}/></button>
+          <details className="menu"><summary aria-label={`管理笔记本 ${b.name}`}><MoreHorizontal size={21}/></summary><div className="menu-items"><button disabled={busy} onClick={() => renameNotebook(b.id)}>重命名</button><button disabled={busy} className="danger" onClick={() => void removeNotebook(b.id)}>删除笔记本</button></div></details>
+        </div>)}</div><button disabled={busy} className="wide new-book" onClick={createNotebook}><Plus size={19}/>新建笔记本</button>
+        {!data.notebooks.length && <p className="empty">新建一本笔记本，开始收录你的英语表达。</p>}
+        <p className="privacy-note">笔记保存在当前设备 · 请定期备份</p></>}
+    </>}
+    {view.page === 'book' && (book ? <><SearchBox value={view.query} onChange={q => nav.current?.query(q)}/><div className="section-label"><span>{data.notes.filter(n => n.notebookId === book.id).length} 篇笔记</span><button disabled={busy} onClick={() => void commit(s => ({ ...s, order: s.order === 'asc' ? 'desc' : 'asc' }))} aria-label="切换 Day 排序">{data.order === 'asc' ? '↑ 正序' : '↓ 倒序'}</button></div>
+      {view.query.trim() ? results(false) : <><div className="day-grid">{sortedNotes(data.notes.filter(n => n.notebookId === book.id), data.order).map(n => <button key={n.uid} className="day-target" aria-label={`${dayLabel(n.day)}，${n.topic}`} onClick={() => openNote(n)}><span className={n.day > 999 ? 'day-circle digits' : 'day-circle'}>{String(n.day).padStart(2, '0')}</span></button>)}</div>{!data.notes.some(n => n.notebookId === book.id) && <p className="empty">还没有笔记。点击右上角 + 导入或新增。</p>}</>}
+    </> : <p>笔记本已不存在，请返回首页。</p>)}
+    {view.page === 'detail' && (note ? <article className="note-detail">
+      <p className="eyebrow">{dayLabel(note.day)} <span>· {note.date}</span></p><h1>{note.topic}</h1>{note.title !== note.topic && <p className="note-title">{note.title}</p>}
+      <h2>重点表达</h2><div className="expressions">{note.sentences.map(s => <section className="expression" key={s.id}><p lang="en" className="english">{s.en}</p><p className="translation">{s.zh}</p></section>)}</div>
+      <h2>今日纠错</h2>{!note.mistakes.length && !note.legacyMistakes?.length && <p className="muted">当天没有纠错记录。</p>}
+      {note.mistakes.map(m => <p className="correction" key={m.id}><del lang="en">{m.original}</del><span aria-hidden="true"> → </span><span lang="en">{m.corrected}</span></p>)}
+      {!!note.legacyMistakes?.length && <section><h3>旧版纠错原文</h3>{note.legacyMistakes.map((m, i) => <p className="preserve" key={i}>{m || '（空记录）'}</p>)}</section>}
+    </article> : <p>笔记已不存在，请返回列表。</p>)}
+    {view.page === 'add' && book && <>
+      <h1>新增笔记</h1><p className="muted">导入到「{book.name}」</p><button className="secondary wide" onClick={() => attempt(() => { nextDay(data, book.id); nav.current?.go({ page: 'edit', bookId: book.id, query: '' }); })}><Plus size={18}/>手动新增</button>
+      <h2>导入 JSON</h2><label className="file-button"><FileUp size={18}/>选择 JSON 文件<input disabled={busy} type="file" accept=".json,application/json" onChange={e => { void readFile(e.target.files?.[0]); e.target.value = ''; }}/></label>
+      <label>笔记 JSON<textarea className="json" disabled={busy} spellCheck={false} value={input} placeholder="粘贴 ChatGPT 整理的 JSON" onChange={e => setInput(e.target.value)}/></label>
+      <button className="primary wide" disabled={busy || !input.trim()} onClick={() => attempt(() => { setReview({ plan: planImport(data, book.id, parseNotes(input)), restore: false }); setMessage(''); })}>预览导入</button>
+      <details className="example"><summary>查看 JSON 格式示例</summary><pre>{example}</pre></details>
+    </>}
+    {view.page === 'edit' && book && (view.uid && !note ? <p>笔记已不存在，请返回。</p> : <Editor key={`${entry.index}:${view.uid ?? 'new'}`} initial={note ?? blankNote(book.id)} busy={busy} onCancel={back} onSave={async n => { if (await commit(s => saveNote(s, n, book.id, view.uid))) { setMessage('笔记已保存。'); nav.current?.back(); } }}/>) }
+    {view.page === 'backup' && <><h1>设置与备份</h1><p className="muted">SpeakLog V2.0 · {data.notebooks.length} 本笔记本 · {data.notes.length} 篇笔记</p>
+      <section className="settings-section"><h2>完整备份</h2><p>包含全部笔记本、笔记及归属关系。请保存到 iCloud Drive，并确认文件可读取。</p>
+        <button disabled={busy} className="primary wide" onClick={() => attempt(() => { download(exportLibrary(data), `speaklog-backup-v2-${localDate()}.json`); setMessage('已请求导出，请确认文件保存完成。'); })}><Download size={18}/>导出全部笔记本</button>
+        <label className="file-button wide"><FileUp size={18}/>从备份合并恢复<input disabled={busy} type="file" accept=".json,application/json" onChange={e => { void readFile(e.target.files?.[0], true); e.target.value = ''; }}/></label>
+        <p className="muted">兼容 V1 / V2 备份。恢复会先预览新增与更新，不会清空现有笔记。V1 备份归入“采购职场英语”。</p>
+      </section><section className="settings-section"><h2>数据保护</h2><p className="muted">遇到异常时先导出安全副本。请勿卸载 APP 或清除 Safari 网站数据。</p><button onClick={() => void recovery()}>导出安全副本</button></section>
+      <section className="settings-section"><h2>版本更新</h2><p className="muted">新版本下载完成后，保存输入并关闭所有 SpeakLog 页面，再打开。更新只替换应用文件，笔记数据库保留。</p><button onClick={async () => { try { const registration = await navigator.serviceWorker?.getRegistration(); await registration?.update(); setMessage(registration?.waiting ? '新版本已就绪。保存输入后关闭所有 SpeakLog 页面，再重新打开。' : '已检查更新。若有更新下载，请稍后关闭所有页面再打开。'); } catch { setMessage('更新检查失败，请联网后重试。'); } }}>检查更新</button></section>
+    </>}
+    {review && <Modal title={review.restore ? '确认合并恢复' : '确认导入'} busy={busy} onClose={() => setReview(undefined)}>
+      <>{message && <p role="alert" className="notice">{message}</p>}</>
+      <p>新增 {review.plan.added} 篇，更新 {review.plan.updated} 篇{review.plan.booksAdded ? `，新增 ${review.plan.booksAdded} 本笔记本` : ''}。</p>
+      <p className="muted">{review.restore ? '按笔记本 ID 优先、同名其次匹配笔记本，保留现有名称；同一本内按笔记身份或 Day 匹配。' : '仅影响当前笔记本。'}更新会替换下列已有笔记的完整内容，其余笔记保留。</p>
+      {review.plan.updated > 0 && <ul className="update-list">{review.plan.updates.map((v, i) => <li key={i}>{v}</li>)}</ul>}
+      <button className="primary wide" disabled={busy} onClick={async () => { const pending = review; if (await commit(() => applyPlan(pending.plan, true), pending.restore ? 'restore' : 'import')) { setReview(undefined); setInput(''); setMessage(`已${pending.restore ? '恢复' : '导入'}：新增 ${pending.plan.added} 篇，更新 ${pending.plan.updated} 篇。`); if (!pending.restore) nav.current?.back(); } }}>确认{review.restore ? '合并恢复' : '导入'}{review.plan.updated ? '并更新' : ''}</button>
+      <button className="wide" disabled={busy} onClick={() => setReview(undefined)}>取消，保留原数据</button>
+    </Modal>}
+    {moving && note && <MoveDialog state={data} note={note} busy={busy} error={message} onClose={() => setMoving(false)} onMove={async (target, day) => { if (await commit(s => moveNote(s, note.uid, target, day))) { setMoving(false); setMessage('笔记已移动。'); } }}/> }
   </main>;
 }

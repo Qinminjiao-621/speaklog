@@ -1,128 +1,124 @@
-# SpeakLog
+# SpeakLog V2.0
 
-个人英语口语每日笔记本，适配 iPhone 的 PWA。每天在 ChatGPT 练习英语并整理 JSON，然后导入 SpeakLog。仅提供笔记收录、查看、全文搜索和数据备份，无账号、后端或自动上传。
+个人英语口语笔记本，适配 iPhone 主屏幕 PWA。收录 ChatGPT 整理的每日笔记，按笔记本和 Day 浏览，支持中英文全文搜索、编辑、移动及完整备份。笔记只保存在当前设备的 IndexedDB，没有账号、后端或自动上传。
 
-保留 Vite、React、TypeScript、IndexedDB、PWA 和 GitHub Pages 部署配置。
+沿用 React、TypeScript、Vite、idb 与 GitHub Pages。生产地址保持为 https://qinminjiao-621.github.io/speaklog/ 。V2 已通过本地验收并获得用户发布授权；实际发布结果以仓库 GitHub Actions 和线上验证为准。
 
-## 本地查看
+## 本地运行
 
 需要 Node.js 22.12 或更高版本。
 
 ```sh
-cd ~/Projects/speaklog
 npm ci
-npm run dev
-```
-
-打开 http://localhost:5173/speaklog/（以终端实际端口为准）。同一 Wi-Fi 下，iPhone 可打开终端显示的 Network 地址加 `/speaklog/`。局域网 HTTP 可查看界面，安装和离线缓存应使用 HTTPS；localhost 仅指当前设备。
-
-```sh
 npm test
 npm run typecheck
 npm run build
-npm run preview
+npm run preview -- --host 127.0.0.1 --port 4175 --strictPort
 ```
 
-生产预览通常为 http://localhost:4173/speaklog/。Service Worker 只在生产构建启用。不同协议、域名或端口拥有不同的浏览器存储，切换地址不会自动迁移笔记，请使用备份恢复。
+生产预览：http://127.0.0.1:4175/speaklog/ 。绑定回环地址，仅这台 Mac 可访问。开发模式使用 `npm run dev`。预览端口与域名共同决定浏览器存储，和正式网站完全隔离；不要将不同地址的空数据库误认为真实笔记丢失。验收建议用无痕窗口和模拟笔记。
 
-## 使用
+## 功能
 
-- 首页直接搜索中文或英文关键词，英文不区分大小写。搜索覆盖标题、主题、英文句子、中文翻译、原始错误表达、正确表达及保留的旧纠错原文，也支持日期和 Day 编号。
-- 每日笔记按日期倒序排列，同日按 Day 编号倒序。点击结果打开完整笔记。
-- “手动新增”默认使用已有最大 Day 编号加一，可修改日期、编号、标题、自由主题，并增删句子和纠错。编辑保留笔记与已有条目的 ID。
-- 详情支持编辑及确认后删除。没有纠错时使用空数组。
-- “导入笔记”可粘贴 JSON，或选择 JSON 文件后点击“验证并导入”。提供中文成功或失败提示；同 ID 更新整篇笔记，其他笔记保留。
-- 首页底部提供导出全部笔记、从 JSON 备份恢复。无需设置页或其他导航。
+- 首页默认仅一本“采购职场英语”，无示例笔记。可新建、重命名、删除；名称去除首尾空格，Unicode 正规化和大小写比较后不能重复。空本删除一次确认，非空本两次确认并显示名称与真实篇数。
+- 笔记本内每行 7 个 Day 圆圈，只列出实际存在的笔记，无缺号占位。顶部 `+` 支持手动新增或 JSON 导入；正序/倒序保存到数据库。
+- 首页全局搜索，笔记本内局部搜索。输入查询后显示精简结果和命中片段，全局结果注明归属。英文不区分大小写；`Day 15`、`day15`、`15` 均精确匹配编号 15，纯数字不用于模糊匹配正文。
+- 详情使用紧凑英文/中文上下排版和浅色分隔线；纠错只显示原始表达 → 正确表达。旧版无法确定对应关系的纠错仍保留原文。
+- 详情 `···` 支持编辑、移动、删除。移动保留内部身份、内容及日期；编号冲突时建议可用 Day，不能覆盖目标。标题中的旧 Day 字样不自动改写。
+- 顶部返回和浏览器历史记录共用导航，恢复原搜索、笔记本及滚动位置。详情左侧 24px 内的短时水平右滑可返回；长按、选中文字、控件、多指、垂直滚动、非边缘起手不会触发自定义返回。首页不注册该手势。
 
-## ChatGPT JSON 格式
+## JSON 导入
+
+继续接受 `schemaVersion: 1` 单篇、数组和 `{ "notes": [...] }`，不需要额外填写笔记本字段：导入到当前打开的笔记本。
 
 ```json
 {
   "schemaVersion": 1,
-  "id": "day-04",
-  "day": 4,
-  "date": "2026-11-10",
-  "title": "Day 04｜采购报价谈判",
-  "topic": "采购报价谈判",
-  "sentences": [
-    {
-      "id": "day-04-s01",
-      "en": "I would ask the supplier to break down the price into materials, labor, and overhead.",
-      "zh": "我会要求供应商将报价拆分为材料、人工和间接费用。"
-    }
-  ],
-  "mistakes": [
-    {
-      "id": "day-04-m01",
-      "original": "Your price is too high than the market price.",
-      "corrected": "Your price is higher than the market price."
-    }
-  ]
+  "id": "day-01",
+  "day": 1,
+  "date": "2026-01-01",
+  "title": "Day 01｜日常问候",
+  "topic": "日常问候",
+  "sentences": [{ "id": "s01", "en": "Good morning.", "zh": "早上好。" }],
+  "mistakes": []
 }
 ```
 
-支持单篇对象、对象数组或 `{ "notes": [...] }`。无需 `tip`、`summary`、`reason` 或 `explanation` 字段。主题不限预设选项。
+纠错条目为 `{ "id": "m01", "original": "错误表达", "corrected": "正确表达" }`。不要求 reason、explanation、tip 或 summary。兼容旧字符串纠错及已有 tip、summary、example、legacyMistakes 字段，不丢弃这些兼容数据。
 
-`schemaVersion` 必须为数字 1；`day` 为 1–10000 的整数；`date` 是真实的 YYYY-MM-DD 日期；ID、标题、主题和中英文内容必须是非空字符串。每篇 1–500 个句子，每次普通导入最多 1000 篇，主要文本字段最多 20000 字；累计笔记数量和备份恢复不受单批数量限制。整批校验后再保存，重复笔记 ID、篇内重复句子或纠错 ID、缺字段或类型错误都会拒绝整批操作。内容按纯文本显示。
+导入先整批校验，再预览新增、更新数量和将被替换的笔记。用户确认后一次事务保存；取消不保存。同一本内按 Day 或原导入 ID 匹配，保留稳定内部 UID；若二者指向不同笔记，或同批存在重复 Day、多次更新同一身份，则拒绝整批。不同笔记本的相同 Day 和原导入 ID 互不覆盖。
 
-可对 ChatGPT 说：“只输出 SpeakLog schemaVersion=1 JSON。sentences 包含 id/en/zh；mistakes 包含 id/original/corrected，没有纠错时为 []。同一天和已有条目保持 ID 稳定，不要输出代码围栏或解释性字段。”
+沿用 V1 校验限制：Day 为 1–10000 的整数、真实日期、非空文本、每篇 1–500 句、普通导入最多 1000 篇；完整备份和累计存储不受单批数量限制。内容以纯文本显示。
 
-## 旧数据兼容与备份
+## 数据模型与安全迁移
 
-- 继续使用 IndexedDB 数据库 `speaklog`、版本 1、对象仓库 `app`、键 `state`。不清空、不删除旧库，不自动移除旧示例笔记。全新安装为空，不注入示例。
-- 加载时在内存转换旧 schemaVersion=1 笔记，不写回数据库。第一次保存前，事务内将已有完整状态保存到 `legacy-state-before-simplification`，该快照以后不覆盖。它是内部保底副本，不替代文件备份。
-- 旧字符串纠错中仅含一个明确 `→` 或 `->`，且两侧非空时，按原文顺序转换并生成稳定 ID。没有明确对应关系或有多个箭头时，保留至兼容字段 `legacyMistakes`，详情显示“旧版纠错原文”，也可搜索、编辑和导出；不推断或补写信息。
-- 旧句子的 `tip`、旧 `summary` 和示例标记作为兼容数据保留在笔记及备份中；提示和总结不再作为新笔记的编辑字段或常规展示内容。旧功能状态不参与应用逻辑，仅原始数据库快照仍可保留它们。
-- 读取失败不会初始化覆盖旧数据；保存失败不会更新页面中的笔记。不要清除网站数据来解决读取错误。
-- 导出文件为 `speaklog-backup-日期.json`，含 `backupVersion: 1`、导出时间与全部 `notes`。兼容旧版 v1 备份。
-- 恢复先校验并请求确认，再合并笔记；同 ID 用备份内容更新，其他本地笔记保留，空备份不会清空现有数据。普通导入和恢复都会用输入内容替换同 ID 的整篇笔记，请确认内容完整。
-- 文件恢复不是自动同步。清除浏览器网站数据或系统回收存储可能导致笔记丢失，请定期导出到“文件”/iCloud Drive，并确认下载完成。避免多个标签页同时编辑。
+IndexedDB **数据库名 `speaklog`、数据库版本 1、对象仓库 `app` 保持不变**。这里的数据库版本与备份格式版本、数据模型版本彼此独立。
 
-## iPhone 与 PWA
+V2 使用新键 `state-v2` 存储：
 
-Safari 打开 HTTPS 地址，等待首次在线加载完成，通过分享菜单“添加到主屏幕”。生产版预缓存静态应用，笔记保存在本机 IndexedDB；首次完成缓存后可离线查看、搜索和编辑。
+- `dataVersion: 2`、单调增加的 `revision`、全局 `order`（asc / desc）；
+- `notebooks: [{ id, name }]`；
+- `notes: [{ ...V1笔记字段, uid, notebookId }]`。
 
-更新采用等待策略，关闭所有旧页面再打开以使用新版本。真机验收建议：导入一篇 → 搜索并打开 → 编辑 → 重开检查 → 导出 → 恢复 → 关闭网络后查看。系统安装、离线与文件保存行为仍需在真实 iPhone 上确认。
+笔记本 ID 和笔记 UID 均稳定，Day 只在本内唯一。导入 JSON 原有 `id` 保留，独立于内部 UID。删除全部笔记本后重开不会擅自重新创建。
 
-## GitHub Pages
+首次加载时，在同一个 readwrite 事务中读取、校验 V1 的 `state`，保存 `v1-before-v2` 原始快照和旧状态指纹，生成 V2。旧笔记全部归入默认本，UID 根据旧 ID 稳定生成。**V2 不覆盖 V1 的 `state`，也不改写旧的 `legacy-state-before-simplification`**。校验失败、重复 Day 或写入失败均中止事务；不删除数据库或对象仓库。后续启动只读取并验证已有 V2，迁移幂等。
 
-`.github/workflows/deploy.yml` 执行依赖安装、自动化测试、独立 TypeScript 检查和生产构建，再部署 `dist`。
+保存时再次检查持久化 revision，拒绝过期页面覆盖其他页面；同时检查 V1 指纹，发现旧应用页面写入则停止 V2 写入并提供安全副本导出，保留双方数据供核对。每次保存前保留 `v2-before-last-save`，恢复前额外保留 `v2-before-last-restore`。这些内部快照不能替代 iCloud 文件备份。
 
-需要部署时，将源码提交到名为 `speaklog` 的仓库，在 Settings → Pages 选择 GitHub Actions，推送 main 或手动运行工作流。访问 `https://你的用户名.github.io/speaklog/`。
+## 备份和恢复
 
-路径 `/speaklog/` 配置在 `vite.config.ts` 的 base、manifest start_url/scope 和 `index.html` 图标链接中；更换仓库名时同步修改。界面使用应用内状态导航，不依赖服务器路由回退。
+设置 → “导出全部笔记本”：导出 `backupVersion: 2`，包含所有笔记本、内容、内部 ID、归属及排序。请确认文件已保存到 iCloud Drive 并可读取。
 
-不要提交个人笔记或备份。`.gitignore` 默认忽略所有 JSON、JSONL 和 NDJSON，仅放行根目录的 package.json、package-lock.json、tsconfig.json；同时排除 node_modules、dist、备份目录、环境文件、常见密钥、凭据目录和本地缓存。新增项目配置 JSON 需要逐一审查后加入例外。不要使用 `git add -f` 绕过规则。`public/` 内的文件会直接发布到网站，即使被 Git 忽略，也不要把私人数据放进 public 或源码。
+“从备份合并恢复”支持 V1 和 V2：
 
-## 后续更新与设备迁移
+- V1 笔记放入名称为“采购职场英语”的本。如果原默认本被改名，则创建该名称的新本，不覆盖已改名本。
+- V2 笔记本按 ID 优先、同名其次匹配，保留现有名称；不存在时新增。同一本内按 UID 或 Day 匹配。
+- 恢复前明确列出新增/更新，确认后合并，同匹配笔记被备份整篇替换，其他笔记保留；空备份不会清空现有笔记。
+- 身份跨本、身份与 Day 指向不同笔记、多个备份笔记本映射到同一本等歧义直接拒绝，避免静默覆盖。
+- “导出安全副本”用于异常排查，包含当前 V1/V2 原始状态和快照，使用 `recoveryVersion: 1`；它不是普通导入文件，需人工核对转换。
 
-首次部署需先完成 GitHub CLI 登录、确认目标账号及同名仓库情况，再确认公开上传源码。仓库创建后，在 Settings → Pages → Build and deployment → Source 选择 **GitHub Actions**。如果首次运行早于此设置而失败，设置完成后在 Actions 中重新运行工作流。只有 build 和 deploy 均成功、线上页面与静态资源可访问时，才算完成部署。
-
-首次关联远程 main 分支后，后续更新流程：
+私密备份校验（只读文件，在 Node 的 fake-indexeddb 内存环境中测试，不接触浏览器数据库）：
 
 ```sh
-npm test
-npm run typecheck
-npm run build
-git status --short
-git diff
-# 只添加本次已核查的源文件，例如：
-git add src/App.tsx src/style.css
-git diff --cached --stat
-git diff --cached
-git commit -m "Describe this update"
-git push origin main
+node --experimental-strip-types scripts/check-v1-backup.mjs "本地V1备份路径"
+node scripts/check-v2-backup.mjs "本地V1备份路径"
 ```
 
-推送 main 会自动触发同一部署工作流；也可以在 Actions 手动运行。不要强制推送覆盖历史。更新应保持网站域名、/speaklog/ 路径和 IndexedDB 数据库配置稳定；只更新代码不需要清除网站数据。
+这两个升级校验脚本针对已有 Day 01–05 的升级场景，会检查缺失编号。第二个脚本验证 V2 迁移、内容一致性、重复加载、V1/V2 恢复、V1 原始状态保留和文件未变；输出只包含数量、编号和摘要校验值，不输出私人正文。
 
-本地 localhost 笔记不会自动出现在公网域名或其他设备上。迁移前，在原设备页面点击“导出全部笔记”，确认备份内容完整，再通过 AirDrop 或 iCloud Drive 保存到目标设备。部署验证成功后，用 iPhone Safari 打开网站，分享 → 添加到主屏幕，再从主屏幕打开 SpeakLog，通过首页“从 JSON 备份恢复”选择备份文件。单篇每日 JSON 可使用“导入笔记 → 选择 JSON 文件 → 验证并导入”。检查笔记和搜索结果，关闭后重开确认保存。此过程不会删除原设备的笔记。
+## PWA 和 iPhone 升级
 
-## 验证与代码
+保持原域名、`/speaklog/`、start_url 和 scope。Service Worker 继续使用等待更新策略，不设置 skipWaiting/clientsClaim 强制接管，不在阅读或编辑中自动刷新。构建预缓存同一版本的 HTML/JS/CSS，只有旧页面都关闭后新 Worker 才接管。
 
-- `src/App.tsx`：首页搜索、列表、详情、手动编辑、导入及备份入口。
-- `src/data.ts`：格式校验、旧数据兼容、全文搜索、按 ID 合并、备份与 IndexedDB。
-- `src/data.test.ts`：22 项自动化测试，覆盖新旧格式、搜索范围、重复 ID、备份往返、原始数据保护和超过 1000 篇的累计存储。
-- `src/style.css`：iPhone 安全区域、触控尺寸、移动布局与系统深浅色。
+正式部署成功后：
 
-已通过 22 项自动化测试、TypeScript 检查和生产构建。本地预览首页、manifest 与 Service Worker 均返回 HTTP 200。浏览器自动化宿主不可用，未完成视觉与点击验收；真实 iPhone 的安装、离线及下载恢复仍需验证。未发布或上传个人笔记。
+1. 保留已验证的升级前 JSON，结束未保存输入。
+2. 联网打开原来的主屏幕 SpeakLog，给应用时间下载更新；保存输入，关闭所有 SpeakLog PWA/Safari 页面，再打开。必要时再进行一次开关流程，不卸载、不清除 Safari 数据。
+3. 确认首页显示 V2.0，“采购职场英语”内旧 Day 01–05 完整、日期与内容不变。
+4. 打开旧笔记并用中英文、Day 编号搜索；切换排序后关闭重开。
+5. 新建测试笔记本，导入一篇独立 Day 01；再导入同 Day，核对更新预览并测试取消。
+6. 从搜索结果进入详情，使用顶部返回和左边缘右滑，核对搜索、滚动、排序和归属恢复；检查正常上下阅读、复制和输入不受干扰。
+7. 关闭重开后确认保存，导出新的 V2 全量备份。首次完整缓存后再验证离线打开。
+
+自动化通过不等于 iPhone 真机通过。iOS 主屏幕更新、边缘手势与 Safari 原生历史协作、文件保存和离线行为仍需用户真机验收。
+
+## 发布与回退
+
+当前仓库 `Qinminjiao-621/speaklog` 的 `main` 推送继续走 `.github/workflows/deploy.yml`：npm ci → 测试 → 类型检查 → 构建 → Pages 上传 → 部署。确认用户本地验收通过并同意发布后才能推送，不能 force push。发布成功须同时确认 Actions build/deploy 成功，以及线上 HTML、脚本、样式、manifest、Service Worker 可访问。
+
+升级前代码回退标签：`speaklog-v1.0-before-v2-20261113`，指向 `23c7998e396ec787937669181de618bc0e2c1d08`。本地完整代码 bundle 位于已忽略的 `backups/`。
+
+**代码回退不是数据回退。** V1 页面读取保留的旧 `state`，看不到 V2 新增或移动的笔记，但 V2 数据仍保留在 `state-v2`。发生问题应先导出 V2 全量备份及安全副本并停止编辑，优先修复 V2。若确需回退代码，应以新提交恢复经验证的 V1 文件，经过发布确认后正常推送，保留全部历史。回退后不要在 V1 和 V2 两边交替编辑；V1 新写入会触发 V2 指纹保护，须在隔离环境人工核对合并，不能清库重来。
+
+## 测试与文件
+
+- `src/data.ts`：保留 V1 校验及兼容工具；原有 22 项测试不变。
+- `src/model.ts`：V2 模型、笔记本、导入计划、搜索、移动、备份恢复。
+- `src/storage.ts`：原子迁移、快照、revision 和旧版写入保护。
+- `src/navigation.ts`、`src/useNavigation.ts`：历史、列表位置和手势。
+- `src/App.tsx`、`src/components/Editor.tsx`、`src/style.css`：界面及编辑器。
+- `scripts/check-*-backup.mjs`：本地私密备份隔离校验。
+- `docs/v2-local-acceptance.md`：本地验收记录和待确认事项。
+
+隐私规则：不要将私人 JSON、备份或密钥放入 src/public；public 中的所有文件都会发布。`.gitignore` 排除私人 JSON、backups、private-data、环境和密钥文件、node_modules、dist 等。只逐个添加经审核的源码文件，禁止 `git add -f` 绕过排除规则。
