@@ -26,6 +26,10 @@ export class Navigation {
     this.checkpoint(); const next: Entry = { speaklog: 2, index: this.entry.index + 1, view, scroll: 0 };
     this.history.pushState(next, ''); this.returning = false; this.publish(next);
   }
+  replace(view: View) {
+    const next = { ...this.entry, view, scroll: 0 };
+    this.history.replaceState(next, ''); this.publish(next);
+  }
   query(query: string) {
     const next = { ...this.entry, view: { ...this.entry.view, query }, scroll: 0 };
     this.history.replaceState(next, ''); this.publish(next);

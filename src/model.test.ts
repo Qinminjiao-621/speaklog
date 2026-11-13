@@ -8,7 +8,7 @@ const seeded = () => migrateLegacy({ notes: [fixture(1), fixture(5)] });
 
 describe('笔记本', () => {
   it('只初始化默认一本，初始无笔记', () => { expect(emptyLibrary().notebooks).toEqual([DEFAULT_BOOK]); expect(emptyLibrary().notes).toEqual([]); });
-  it('创建唯一稳定 ID 的笔记本', () => { const s = addBook(emptyLibrary(), '生活', 'book-b'); expect(s.notebooks[1]).toEqual({ id: 'book-b', name: '生活' }); });
+  it('创建唯一稳定 ID 的笔记本', () => { const s = addBook(emptyLibrary(), '生活', 'book-b'); expect(s.notebooks[1]).toEqual({ id: 'book-b', name: '生活', language: 'en' }); });
   it.each(['采购职场英语', ' 采购职场英语 '])('拒绝重名 %s', name => expect(() => addBook(emptyLibrary(), name)).toThrow('重复'));
   it('名称正规化、大小写重名受保护', () => { const s = addBook(emptyLibrary(), 'English'); expect(() => addBook(s, 'ＥＮＧＬＩＳＨ')).toThrow('重复'); });
   it('拒绝重复内部 ID', () => expect(() => addBook(emptyLibrary(), '其他', DEFAULT_BOOK.id)).toThrow('重复'));
@@ -40,11 +40,11 @@ describe('导入、编辑和移动', () => {
 });
 describe('搜索与顺序', () => {
   it('正序倒序按 Day 排列，不改变数据', () => { const s = seeded(); expect(sortedNotes(s.notes, 'asc').map(n => n.day)).toEqual([1, 5]); expect(sortedNotes(s.notes, 'desc').map(n => n.day)).toEqual([5, 1]); expect(s.notes.map(n => n.day)).toEqual([1, 5]); });
-  it.each(['SUPPLIER', '供应商', 'I is', 'I am', 'greeting', '问候'])('全文搜索 %s', q => expect(searchLibrary(seeded(), q)).toHaveLength(2));
-  it.each(['Day 15', 'day15', '15', 'DAY 015'])('编号精确匹配 %s', q => { const s = migrateLegacy({ notes: [fixture(1), fixture(15), fixture(150)] }); expect(searchLibrary(s, q).map(r => r.note.day)).toEqual([15]); });
-  it('纯数字不误匹配句子中的编号', () => { const s = migrateLegacy({ notes: [{ ...fixture(1), title: '15 words' }] }); expect(searchLibrary(s, '15')).toHaveLength(0); });
-  it('全局与局部搜索范围正确，每篇多命中只出一次', () => { const s = planImport(addBook(seeded(), '生活', 'b'), 'b', [fixture()]).state; expect(searchLibrary(s, 'good')).toHaveLength(3); expect(searchLibrary(s, 'good', 'b')).toHaveLength(1); });
-  it('片段包含实际命中内容', () => expect(searchLibrary(seeded(), '供应商')[0].snippet).toContain('供应商'));
+  it.each(['SUPPLIER', '供应商', 'I is', 'I am', 'greeting', '问候'])('全文搜索 %s', q => expect(searchLibrary(seeded(), q, DEFAULT_BOOK.id)).toHaveLength(2));
+  it.each(['Day 15', 'day15', '15', 'DAY 015'])('编号精确匹配 %s', q => { const s = migrateLegacy({ notes: [fixture(1), fixture(15), fixture(150)] }); expect(searchLibrary(s, q, DEFAULT_BOOK.id).map(r => r.note.day)).toEqual([15]); });
+  it('纯数字不误匹配句子中的编号', () => { const s = migrateLegacy({ notes: [{ ...fixture(1), title: '15 words' }] }); expect(searchLibrary(s, '15', DEFAULT_BOOK.id)).toHaveLength(0); });
+  it('搜索只限指定笔记本，每篇多命中只出一次', () => { const s = planImport(addBook(seeded(), '生活', 'b'), 'b', [fixture()]).state; expect(searchLibrary(s, 'good', DEFAULT_BOOK.id)).toHaveLength(2); expect(searchLibrary(s, 'good', 'b')).toHaveLength(1); });
+  it('片段包含实际命中内容', () => expect(searchLibrary(seeded(), '供应商', DEFAULT_BOOK.id)[0].snippet).toContain('供应商'));
   it('空查询返回所属笔记本实际笔记', () => expect(searchLibrary(seeded(), '', DEFAULT_BOOK.id)).toHaveLength(2));
 });
 describe('备份与迁移', () => {
@@ -57,7 +57,7 @@ describe('备份与迁移', () => {
   it('重复恢复 V2 不重复生成笔记', () => { const s = seeded(); const first = planRestore(emptyLibrary(), exportLibrary(s)).state; expect(planRestore(first, exportLibrary(s)).state).toEqual(first); });
   it('V2 同名不同 ID 合并到已有本并提示更新', () => { const s = addBook(emptyLibrary(), '生活', 'b'); const incoming = planImport(addBook(emptyLibrary(), '生活', 'c'), 'c', [fixture()]).state; const p = planRestore(s, exportLibrary(incoming)); expect(p.state.notes[0].notebookId).toBe('b'); expect(p.booksAdded).toBe(0); });
   it('V2 内部身份已移到其他本时拒绝跨本覆盖', () => { const original = seeded(); const moved = moveNote(addBook(original, '生活', 'b'), original.notes[0].uid, 'b', 1); expect(() => planRestore(moved, exportLibrary(original))).toThrow('其他笔记本'); });
-  it('备份笔记本不能多对一合并造成覆盖', () => { const current = addBook(emptyLibrary(), '生活', 'b'); const source = validateLibrary({ ...emptyLibrary(), notebooks: [{ id: 'source-x', name: '生活' }, { id: 'b', name: '其他' }] }); expect(() => planRestore(current, exportLibrary(source))).toThrow('多个笔记本'); });
-  it('未知备份版本和孤立笔记拒绝', () => { expect(() => readBackup({ backupVersion: 3 })).toThrow(); const s = seeded(); expect(() => validateLibrary({ ...s, notebooks: [] })).toThrow('不存在'); });
+  it('备份笔记本不能多对一合并造成覆盖', () => { const current = addBook(emptyLibrary(), '生活', 'b'); const source = validateLibrary({ ...emptyLibrary(), notebooks: [{ id: 'source-x', name: '生活', language: 'en' }, { id: 'b', name: '其他', language: 'en' }] }); expect(() => planRestore(current, exportLibrary(source))).toThrow('多个笔记本'); });
+  it('未知备份版本和孤立笔记拒绝', () => { expect(() => readBackup({ backupVersion: 99 })).toThrow(); const s = seeded(); expect(() => validateLibrary({ ...s, notebooks: [] })).toThrow('不存在'); });
   it('累计超过1000篇可完整备份恢复', () => { const s = migrateLegacy({ notes: Array.from({ length: 1001 }, (_, i) => fixture(i + 1)) }); expect(readBackup(exportLibrary(s)).library.notes).toHaveLength(1001); expect(planRestore(emptyLibrary(), exportLibrary(s)).state.notes).toHaveLength(1001); });
 });

@@ -3,9 +3,8 @@ import 'fake-indexeddb/auto';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
-import { build } from 'esbuild';
+import { loadV2Api } from './baseline-v2.mjs';
 import { openDB } from 'idb';
-import { fileURLToPath } from 'node:url';
 
 try {
   if (process.argv.length !== 3) throw new Error('请提供一个本地 V1 完整备份文件路径。');
@@ -13,8 +12,7 @@ try {
   let raw;
   try { raw = JSON.parse(bytes.toString('utf8').replace(/^\uFEFF/, '')); }
   catch { throw new Error('不是有效的 JSON，原文件未修改。'); }
-  const bundle = await build({ stdin: { contents: "export * from './src/model.ts'; export * from './src/storage.ts'; export { validateBackup } from './src/data.ts';", resolveDir: fileURLToPath(new URL('../', import.meta.url)) }, bundle: true, write: false, platform: 'node', format: 'esm', logLevel: 'silent' });
-  const api = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString('base64')}`);
+  const api = await loadV2Api();
   const v1 = api.validateBackup(raw);
   const days = v1.notes.map(n => n.day).sort((a, b) => a - b);
   if (![1, 2, 3, 4, 5].every(d => days.includes(d))) throw new Error('未包含完整 Day 01–05。');
